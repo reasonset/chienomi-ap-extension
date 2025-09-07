@@ -14,20 +14,24 @@ link = ARGV.shift
 
 abort "craete-apevent.rb <title> <link>" unless title && link
 
-OUTBOX_PATH = [STATIC_DB_OUTBOX, "outbox.json"].join("/")
-COLLECTION_GLOB = [STATIC_DB_OUTBOX, "collection-*.json"].join("/")
+OUTBOX_PATH = [STATIC_DB_OUTBOX, "outbox"].join("/")
+COLLECTION_GLOB = [STATIC_DB_OUTBOX, "collection-*"].join("/")
+SANITALIZED_COLLECTION_DATA = Oj.load Oj.dump BASE_COLLECTION_DATA
 
 # Automatic initialize
 unless File.exist? OUTBOX_PATH
   require_relative 'ap_configured_objects'
   require 'fileutils'
   STDERR.puts "Initialize AP Database..."
-  FileUtils.mkdir_p STATIC_DB_ROOT unless File.exist? STATIC_DB_ROOT
-  Dir.mkdir STATIC_DB_OUTBOX unless File.exist? STATIC_DB_OUTBOX
+  FileUtils.mkdir_p STATIC_DB_OUTBOX unless File.exist? STATIC_DB_OUTBOX
   Dir.mkdir STATIC_DB_CREATES unless File.exist? STATIC_DB_CREATES
   Dir.mkdir STATIC_DB_NOTES unless File.exist? STATIC_DB_NOTES
   File.open(OUTBOX_PATH, "w") {|f| f.write Oj.dump INITIAL_OUTBOX_DATA}
-  File.open([STATIC_DB_OUTBOX, "collection-1.json"].join("/"), "w") {|f| f.write Oj.dump BASE_COLLECTION_DATA}
+  File.open([STATIC_DB_OUTBOX, "collection-1"].join("/"), "w") do |f|
+    collection = SANITALIZED_COLLECTION_DATA.clone
+    collection["id"] = collection["id"] % 1
+    f.write Oj.dump collection
+  end
 end
 
 collections = Dir.glob(COLLECTION_GLOB)
@@ -53,8 +57,8 @@ note["content"] = title
 create["id"] = sprintf(create["id"], ap_obejct_id)
 note["id"] = sprintf(note["id"], ap_obejct_id)
 
-create_filepath = "#{STATIC_DB_CREATES}/#{File.basename create["id"]}.json"
-note_filepath = "#{STATIC_DB_NOTES}/#{File.basename note["id"]}.json"
+create_filepath = "#{STATIC_DB_CREATES}/#{File.basename create["id"]}"
+note_filepath = "#{STATIC_DB_NOTES}/#{File.basename note["id"]}"
 
 # Check already exist
 if File.exist? note_filepath
@@ -74,14 +78,15 @@ page_next = true if latest_data["orderedItems"].size >= 20
 File.open(create_filepath, "w") {|f| f.write Oj.dump create }
 File.open(note_filepath, "w") {|f| f.write Oj.dump note }
 
-outbox["first"] = outbox["first"].sub(/\.json$/, "").succ + ".json" if page_next
+outbox["first"] = outbox["first"].succ if page_next
 
 File.open(OUTBOX_PATH, "w") {|f| f.write Oj.dump outbox }
 File.open(latest_collection, "w") {|f| f.write Oj.dump latest_data }
 
 if page_next
-  next_collection = latest_collection.sub(/\.json$/, "").succ + ".json"
-  next_collection_data = BASE_COLLECTION_DATA.clone
-  next_collection_data["next"] = [COLLECTION_PREFIX, File.basename(latest_collection)]
+  next_collection = latest_collection.succ
+  next_collection_data = SANITALIZED_COLLECTION_DATA.clone
+  next_collection_data["id"] = [COLLECTION_PREFIX, File.basename(next_collection)].join("/")
+  next_collection_data["next"] = [COLLECTION_PREFIX, File.basename(latest_collection)].join("/")
   File.open(next_collection, "w") {|f| f.write Oj.dump next_collection_data }
 end
